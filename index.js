@@ -9,13 +9,17 @@ const requestIp = require('request-ip');
 const User = require('./models/user');
 const Forum = require('./models/forum');
 const Post = require('./models/post');
+const BannedIp = require('./models/bannedIp');  // BannedIp modeli eklenmiş
 
 const app = express();
 
-// Database Bağlantı
+// MongoDB Bağlantısı
 mongoose.connect('mongodb://localhost:27017/worsebox')
   .then(() => console.log('MongoDB Bağlandı'))
-  .catch(err => console.log(err));
+  .catch(err => {
+    console.log('MongoDB Bağlantı Hatası:', err);
+    process.exit(1); // Bağlantı hatası durumunda uygulamayı sonlandır
+  });
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
@@ -29,7 +33,7 @@ app.use(session({
 }));
 app.set('view engine', 'ejs');
 
-// Upload Ayarları
+// Multer (Dosya Yükleme Ayarları)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
@@ -51,7 +55,7 @@ app.use(async (req, res, next) => {
 // Admin Hesabını Oluştur
 async function createAdmin() {
   const adminExists = await User.findOne({ email: 'adminbabapuroomer31@gmail.com' });
-  
+
   if (!adminExists) {
     const hashedPassword = await bcrypt.hash('babapiro31', 10);
     const admin = new User({
@@ -60,7 +64,7 @@ async function createAdmin() {
       password: hashedPassword,
       isAdmin: true,
     });
-    
+
     await admin.save();
     console.log('Admin kullanıcı başarıyla oluşturuldu!');
   } else {
@@ -108,19 +112,11 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-app.get('/profile', async (req, res) => {
-  if (!req.session.userId) return res.redirect('/login');
-  const user = await User.findById(req.session.userId);
-  res.render('profile', { user });
-});
-
-app.post('/profile', upload.single('pfp'), async (req, res) => {
-  if (!req.session.userId) return res.redirect('/login');
-  const user = await User.findById(req.session.userId);
-  if (req.body.username) user.username = req.body.username;
-  if (req.file) user.pfp = '/' + req.file.filename;
-  await user.save();
-  res.redirect('/profile');
+// Admin Paneli
+app.get('/admin', async (req, res) => {
+  if (!res.locals.isAdmin) return res.redirect('/');
+  const forums = await Forum.find({});
+  res.render('admin', { forums });
 });
 
 // Forum ve Postlar
@@ -130,27 +126,7 @@ app.get('/forum/:id', async (req, res) => {
   res.render('forum', { forum, posts });
 });
 
-app.post('/forum/:id', upload.single('image'), async (req, res) => {
-  if (!req.session.userId) return res.redirect('/login');
-  const forum = await Forum.findById(req.params.id);
-  const post = new Post({
-    forum: forum._id,
-    content: req.body.content,
-    author: req.session.userId,
-    image: req.file ? '/' + req.file.filename : null
-  });
-  await post.save();
-  res.redirect('/forum/' + forum._id);
-});
-
-// Admin Paneli
-app.get('/admin', async (req, res) => {
-  if (!res.locals.isAdmin) return res.redirect('/');
-  const forums = await Forum.find({});
-  res.render('admin', { forums });
-});
-
-// Forum Ekleme
+// Forum Ekleme ve Silme
 app.post('/admin/forum', async (req, res) => {
   if (!res.locals.isAdmin) return res.redirect('/');
   const forum = new Forum({ title: req.body.title });
@@ -158,7 +134,6 @@ app.post('/admin/forum', async (req, res) => {
   res.redirect('/admin');
 });
 
-// Forum Silme
 app.post('/admin/forum/:id/delete', async (req, res) => {
   if (!res.locals.isAdmin) return res.redirect('/');
   await Forum.findByIdAndDelete(req.params.id);
@@ -174,16 +149,16 @@ app.post('/admin/post/:id/delete', async (req, res) => {
 });
 
 // Cihaz Banlama (IP ile)
-const bannedIps = [];
-
 app.post('/admin/ban/:id', async (req, res) => {
   if (!res.locals.isAdmin) return res.redirect('/');
   
   const user = await User.findById(req.params.id);
   const ip = requestIp.getClientIp(req);  // Kullanıcının IP adresini al
 
-  bannedIps.push(ip);  // IP'yi yasaklı IP listesine ekle
-  res.send(`Kullanıcı ${user.username} banlandı`);
+  const bannedIp = new BannedIp({ ip });
+  await bannedIp.save();
+
+  res.send(`Kullanıcı ${user.username} banlandı.`);
 });
 
 app.listen(3000, () => {
