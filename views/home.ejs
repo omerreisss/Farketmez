@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Worsebox - Anasayfa</title>
+</head>
+<body>
+  <%- include('partials/header') %>
+
+  <h1>Worsebox Forumlarına Hoşgeldiniz</h1>
+  
+  <h2>Forumlar</h2>
+  <ul>
+    <% forums.forEach(forum => { %>
+      <li><a href="/forum/<%= forum._id %>"><%= forum.title %></a></li>
+    <% }) %>
+  </ul>
+
+  <%- include('partials/footer') %>
+</body>
+</html>
